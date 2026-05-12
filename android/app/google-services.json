@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "680915154108",
+    "project_id": "veloce-6e91d",
+    "storage_bucket": "veloce-6e91d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:680915154108:android:7d0364c770800f78a90cb9",
+        "android_client_info": {
+          "package_name": "com.example.veloceapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7komFGGkywgtLSZ3YRBGF88gYjDtjuOs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
