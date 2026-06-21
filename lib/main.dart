@@ -3,18 +3,26 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
-
-// Import your pages
 import 'pages/Landing.dart';
-import 'pages/login.dart';
+import 'pages/Login.dart';
 import 'pages/signup.dart';
 import 'pages/home.dart';
+import 'pages/VehicleBrowser.dart';
+import 'pages/VehicleDetails.dart';
+import 'pages/Profile.dart';
+import 'pages/Admin/dashboard.dart';
+import 'pages/Admin/CRUD.dart';
+import 'pages/Admin/userHandling.dart';
+import 'AppTheme.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
 
-  // Check if they've seen the "Get Started" page
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   final prefs = await SharedPreferences.getInstance();
   final bool hasSeenWelcome = prefs.getBool('has_seen_welcome') ?? false;
 
@@ -31,72 +39,41 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Veloce',
 
-      // The StreamBuilder checks if a user is already signed into Firebase
+      // Use your custom theme
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primaryColor: VeloceTheme.accentBlue,
+        scaffoldBackgroundColor: VeloceTheme.bgDeep,
+      ),
+
+      // Auth Logic: Determines the starting page
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
-          // 1. If user is logged in, go straight to Home
+          // Connection check
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+          // 1. If user is already logged in -> Go to Home
           if (snapshot.hasData) {
             return const HomeScreen();
           }
-
-          // 2. If not logged in, check if they need the Welcome screen
+          // 2. If first time ever -> Go to Welcome/Get Started
           if (!hasSeenWelcome) {
             return const WelcomeScreen();
           }
-
-          // 3. Otherwise, go to Login
+          // 3. Otherwise -> Go to Login
           return const LoginPage();
         },
       ),
 
+      // Named Routes for simple navigation
       routes: {
         "/login": (context) => const LoginPage(),
         "/signup": (context) => const SignUpPage(),
         "/home": (context) => const HomeScreen(),
+        "/browser": (context) => const VehiclesScreen(),
       },
     );
   }
 }
-// import 'package:flutter/material.dart';
-// import 'package:firebase_core/firebase_core.dart';
-// import 'firebase_options.dart';
-// import 'pages/login.dart';
-// import 'pages/signup.dart';
-// import 'pages/home.dart';
-//
-// void main() async {
-//   WidgetsFlutterBinding.ensureInitialized();
-//
-//   await Firebase.initializeApp(
-//     options: DefaultFirebaseOptions.currentPlatform,
-//   );
-//
-//   runApp(const MyApp());
-// }
-//
-// class MyApp extends StatelessWidget {
-//   const MyApp({super.key});
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return MaterialApp(
-//       title: 'Veloce App',
-//       theme: ThemeData(
-//         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-//       ),
-//
-//       debugShowCheckedModeBanner: false,
-//
-//       // App starts from login page
-//       home: const SignUpPage (),
-//
-//       routes: {
-//         "/login": (context) => const LoginPage(),
-//       //  "/signup": (context) => const SignUpPage(),
-//         "/home": (context) => const SignUpPage (),
-//         "/login": (context) => const LoginPage(),
-//       },
-//     );
-//   }
-// }

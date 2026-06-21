@@ -93,142 +93,103 @@ class StatChip extends StatelessWidget {
 // ─── Vehicle Card (Fleet) ─────────────────────────────────────────────────────
 class VehicleCard extends StatelessWidget {
   final Vehicle vehicle;
-  final VoidCallback? onTap;
 
-  const VehicleCard({super.key, required this.vehicle, this.onTap});
+  const VehicleCard({super.key, required this.vehicle});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 200,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          color: VeloceTheme.bgCard,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: VeloceTheme.borderColor),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image
-            Stack(
+    return Container(
+      width: 200,
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: VeloceTheme.bgCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VeloceTheme.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ─── Image Header (Display Only) ───────────────────────────────
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            child: Image.network(
+              vehicle.imageUrl,
+              height: 130,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                height: 130,
+                color: VeloceTheme.bgElevated,
+                child: const Icon(Icons.directions_car, size: 48, color: VeloceTheme.textMuted),
+              ),
+            ),
+          ),
+
+          // ─── Vehicle Information Body ──────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                  child: Image.network(
-                    vehicle.imageUrl,
-                    height: 130,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 130,
-                      color: VeloceTheme.bgElevated,
-                      child: const Icon(Icons.directions_car, size: 48, color: VeloceTheme.textMuted),
-                    ),
+                Text(
+                  vehicle.category,
+                  style: const TextStyle(
+                    color: VeloceTheme.accentBlueBright,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1,
                   ),
                 ),
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: vehicle.isAvailable
-                          ? VeloceTheme.successGreen.withOpacity(0.2)
-                          : VeloceTheme.accentRed.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: vehicle.isAvailable ? VeloceTheme.successGreen : VeloceTheme.accentRed,
-                        width: 0.8,
+                const SizedBox(height: 2),
+                Text(
+                  vehicle.name,
+                  style: const TextStyle(
+                    color: VeloceTheme.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  vehicle.brand,
+                  style: const TextStyle(color: VeloceTheme.textMuted, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _specBadge('${vehicle.horsepower.toInt()} HP'),
+                    const SizedBox(width: 6),
+                    _specBadge('0-60 in ${vehicle.zeroToSixty}s'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // ─── Pricing Presentation (Display Only) ─────────────────
+                RichText(
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '${vehicle.perDayCharges.toInt()} PKR ',
+                        style: const TextStyle(
+                          color: VeloceTheme.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      vehicle.isAvailable ? 'Available' : 'In Use',
-                      style: TextStyle(
-                        color: vehicle.isAvailable ? VeloceTheme.successGreen : VeloceTheme.accentRed,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
+                      const TextSpan(
+                        text: ' /day',
+                        style: TextStyle(color: VeloceTheme.textMuted, fontSize: 12),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ],
             ),
-            // Info
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    vehicle.category,
-                    style: const TextStyle(
-                      color: VeloceTheme.accentBlueBright,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    vehicle.name,
-                    style: const TextStyle(
-                      color: VeloceTheme.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    vehicle.brand,
-                    style: const TextStyle(color: VeloceTheme.textMuted, fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _specBadge('${vehicle.horsepower.toInt()} HP'),
-                      const SizedBox(width: 6),
-                      _specBadge('0-60 in ${vehicle.zeroToSixty}s'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '\$${vehicle.monthlyPrice.toInt()}',
-                              style: const TextStyle(
-                                color: VeloceTheme.textPrimary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const TextSpan(
-                              text: '/mo',
-                              style: TextStyle(color: VeloceTheme.textMuted, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: VeloceTheme.accentBlue.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.arrow_forward, size: 14, color: VeloceTheme.accentBlueBright),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -273,60 +234,6 @@ class SectionHeader extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-// ─── Subscription Badge ───────────────────────────────────────────────────────
-class TierBadge extends StatelessWidget {
-  final SubscriptionTier tier;
-
-  const TierBadge({super.key, required this.tier});
-
-  Color get _color {
-    switch (tier) {
-      case SubscriptionTier.basic:
-        return const Color(0xFF64748B);
-      case SubscriptionTier.premium:
-        return VeloceTheme.accentBlueBright;
-      case SubscriptionTier.elite:
-        return VeloceTheme.accentGold;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: _color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _color.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            tier == SubscriptionTier.elite
-                ? Icons.workspace_premium
-                : tier == SubscriptionTier.premium
-                ? Icons.star
-                : Icons.verified,
-            size: 12,
-            color: _color,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            tier.name.toUpperCase(),
-            style: TextStyle(
-              color: _color,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -413,23 +320,32 @@ class VeloceButton extends StatelessWidget {
   }
 }
 
-// ─── Booking Tile ─────────────────────────────────────────────────────────────
-class BookingTile extends StatelessWidget {
-  final Booking booking;
+// ─── Booking Record Tile ──────────────────────────────────────────────────────
+/// Renders a single [BookingRecord] (the new Firestore-backed booking model).
+/// Used in Profile's "My Bookings" list and anywhere else booking history
+/// needs to be displayed to the end user.
+class BookingRecordTile extends StatelessWidget {
+  final BookingRecord booking;
 
-  const BookingTile({super.key, required this.booking});
+  const BookingRecordTile({super.key, required this.booking});
 
   Color _statusColor(BookingStatus s) {
     switch (s) {
-      case BookingStatus.active:
+      case BookingStatus.pending:
+        return VeloceTheme.accentGold;
+      case BookingStatus.confirmed:
         return VeloceTheme.successGreen;
       case BookingStatus.completed:
         return VeloceTheme.textMuted;
-      case BookingStatus.upcoming:
-        return VeloceTheme.accentBlueBright;
       case BookingStatus.cancelled:
         return VeloceTheme.accentRed;
     }
+  }
+
+  String _dateLabel() {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final d = booking.pickupDate;
+    return '${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
   @override
@@ -442,7 +358,7 @@ class BookingTile extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: Image.network(
-              booking.vehicle.imageUrl,
+              booking.vehicleImageUrl,
               width: 70,
               height: 54,
               fit: BoxFit.cover,
@@ -460,11 +376,11 @@ class BookingTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  booking.vehicle.brand,
+                  booking.vehicleBrand,
                   style: const TextStyle(color: VeloceTheme.textMuted, fontSize: 11),
                 ),
                 Text(
-                  booking.vehicle.name,
+                  booking.vehicleName,
                   style: const TextStyle(
                     color: VeloceTheme.textPrimary,
                     fontSize: 14,
@@ -472,7 +388,7 @@ class BookingTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${booking.vehicle.horsepower.toInt()} HP · 0-60 in ${booking.vehicle.zeroToSixty}s',
+                  '${_dateLabel()} · ${booking.timeSlot}',
                   style: const TextStyle(color: VeloceTheme.textMuted, fontSize: 12),
                 ),
               ],

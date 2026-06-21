@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../AppTheme.dart';
 import '../models.dart';
 import '../commonWidgets.dart';
+import 'VehicleBrowser.dart';
+import 'VehicleDetails.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,9 +16,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final PageController _heroController = PageController();
   late AnimationController _fadeController;
   late Animation<double> _fadeAnim;
+
+  // ─── Featured Fleet — first 6 vehicles from the same Firestore collection
+  // the admin panel manages and the Browse page reads from. Real, bookable
+  // cars; no sample/dummy data.
+  final Stream<QuerySnapshot> _featuredStream = FirebaseFirestore.instance
+      .collection('vehicles')
+      .limit(6)
+      .snapshots();
 
   @override
   void initState() {
@@ -34,25 +47,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final List<Map<String, String>> _heroSlides = [
     {
       'title': 'Subscribe. Veloce. Swap.',
-      'sub': 'No contracts. Flat fee.\nEndless possibilities.',
-      'image': 'https://images.unsplash.com/photo-1614162692292-7ac56d7f7f1e?w=900',
+      'sub': 'No contracts. Flat fee.',
+      'image': 'assets/corolla.jpg',
     },
     {
       'title': 'Drive the Extraordinary.',
-      'sub': 'From Porsche to Lamborghini.\nThe fleet awaits.',
-      'image': 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=900',
+      'sub': 'The fleet awaits.',
+      'image': 'assets/200.jpg',
     },
     {
       'title': 'Elite. Effortless. Exciting.',
       'sub': 'Your concierge delivers.\nYou just drive.',
-      'image': 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=900',
+      'image': 'assets/f.jpg',
     },
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: VeloceTheme.bgDeep,
+      endDrawer: const _AccountDrawer(),
       body: FadeTransition(
         opacity: _fadeAnim,
         child: CustomScrollView(
@@ -63,33 +78,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               floating: true,
               pinned: false,
               backgroundColor: VeloceTheme.bgDeep,
-              leading: Padding(
-                padding: const EdgeInsets.only(left: 20),
+              leading: const Padding(
+                padding: EdgeInsets.only(left: 20),
                 child: _VeloceLogo(),
               ),
               leadingWidth: 80,
               actions: [
-                Stack(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.notifications_outlined, color: VeloceTheme.textPrimary),
-                      onPressed: () {},
-                    ),
-                    Positioned(
-                      right: 10,
-                      top: 10,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: VeloceTheme.accentRed,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ],
+                Padding(
+                  padding: const EdgeInsets.only(right: 20),
+                  child: _buildUserAvatar(),
                 ),
-                const SizedBox(width: 8),
               ],
             ),
 
@@ -102,10 +100,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   const SizedBox(height: 24),
 
                   // ─── Stats Row ─────────────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
                     child: Row(
-                      children: const [
+                      children: [
                         Expanded(child: StatChip(value: '1.5K+', label: 'Total Bookings')),
                         SizedBox(width: 10),
                         Expanded(child: StatChip(value: '150+', label: 'Fleet Size')),
@@ -117,40 +115,148 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   const SizedBox(height: 28),
 
                   // ─── Why Veloce Cards ──────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
                     child: SectionHeader(title: 'Why Veloce?'),
                   ),
                   const SizedBox(height: 14),
                   _buildWhyVeloce(),
                   const SizedBox(height: 28),
 
-                  // ─── Featured Fleet ────────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: SectionHeader(
-                      title: 'Featured Fleet',
-                      actionLabel: 'View All →',
+                  // ─── Featured Fleet (live from Firestore) ───────────────
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const VehiclesScreen()),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    height: 290,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.only(left: 20, right: 8),
-                      itemCount: SampleData.vehicles.length,
-                      itemBuilder: (ctx, i) => VehicleCard(
-                        vehicle: SampleData.vehicles[i],
-                        onTap: () {},
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      child: SectionHeader(
+                        title: 'Featured Fleet',
+                        actionLabel: 'View All →',
                       ),
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  _buildFeaturedFleet(),
                   const SizedBox(height: 32),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Featured Fleet row ───────────────────────────────────────────────────
+  Widget _buildFeaturedFleet() {
+    return SizedBox(
+      height: 290,
+      child: StreamBuilder<QuerySnapshot>(
+        stream: _featuredStream,
+        builder: (context, snapshot) {
+          // Loading
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(left: 20, right: 8),
+              itemCount: 3,
+              itemBuilder: (_, __) => Container(
+                width: 200,
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  color: VeloceTheme.bgCard,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: VeloceTheme.borderColor),
+                ),
+              ),
+            );
+          }
+
+          final docs = snapshot.data?.docs ?? [];
+
+          // Empty fleet — nothing added by admin yet
+          if (docs.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: VeloceTheme.bgCard,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: VeloceTheme.borderColor),
+                ),
+                child: Column(
+                  children: const [
+                    Icon(Icons.garage_outlined, color: VeloceTheme.textMuted, size: 32),
+                    SizedBox(height: 10),
+                    Text('Fleet coming soon', style: TextStyle(color: VeloceTheme.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final vehicles = docs
+              .map((d) => Vehicle.fromFirestore(d.data() as Map<String, dynamic>, d.id))
+              .toList();
+
+          return ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(left: 20, right: 8),
+            itemCount: vehicles.length,
+            itemBuilder: (ctx, i) => GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => VehicleDetailScreen(car: vehicles[i])),
+              ),
+              child: VehicleCard(vehicle: vehicles[i]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildUserAvatar() {
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String email = user?.email ?? 'Guest';
+    final String initial = email.isNotEmpty ? email[0].toUpperCase() : 'G';
+
+    return GestureDetector(
+      onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+      child: Center(
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: VeloceTheme.bgCard,
+            border: Border.all(
+              color: VeloceTheme.accentBlueBright.withOpacity(0.4),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: VeloceTheme.accentBlueBright.withOpacity(0.1),
+                blurRadius: 8,
+                spreadRadius: 1,
+              )
+            ],
+          ),
+          child: Center(
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: VeloceTheme.accentBlueBright,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -296,10 +402,9 @@ class _HeroSlide extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            // Background image
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
-              child: Image.network(
+              child: Image.asset(
                 imageUrl,
                 width: double.infinity,
                 height: 260,
@@ -310,10 +415,12 @@ class _HeroSlide extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     color: VeloceTheme.bgElevated,
                   ),
+                  child: const Center(
+                    child: Icon(Icons.image_not_supported, color: VeloceTheme.textMuted),
+                  ),
                 ),
               ),
             ),
-            // Gradient overlay
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Container(
@@ -331,7 +438,6 @@ class _HeroSlide extends StatelessWidget {
                 ),
               ),
             ),
-            // Text content
             Positioned(
               bottom: 20,
               left: 20,
@@ -367,7 +473,10 @@ class _HeroSlide extends StatelessWidget {
                   const SizedBox(height: 12),
                   VeloceButton(
                     label: 'View Vehicles →',
-                    onPressed: () {},
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const VehiclesScreen()),
+                    ),
                   ),
                 ],
               ),
@@ -379,31 +488,133 @@ class _HeroSlide extends StatelessWidget {
   }
 }
 
-// ─── Veloce Logo Widget ───────────────────────────────────────────────────────
 class _VeloceLogo extends StatelessWidget {
+  const _VeloceLogo({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: VeloceTheme.accentBlue,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Center(
-            child: Text(
-              'V',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Image.asset(
+        'assets/veloce.png',
+        height: 55,
+        fit: BoxFit.contain,
+      ),
+    );
+  }
+}
+
+// ─── Account Drawer ───────────────────────────────────────────────────────────
+/// Slides in from the right when the avatar in the top app bar is tapped.
+/// Shows a larger version of the same initial-letter avatar, the signed-in
+/// user's email, and a Logout button that signs out of Firebase and sends
+/// the user back to the login screen.
+class _AccountDrawer extends StatelessWidget {
+  const _AccountDrawer();
+
+  Future<void> _logout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    if (context.mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String email = user?.email ?? 'Guest';
+    final String initial = email.isNotEmpty ? email[0].toUpperCase() : 'G';
+
+    return Drawer(
+      backgroundColor: VeloceTheme.bgDeep,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Close button
+              Align(
+                alignment: Alignment.topRight,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: VeloceTheme.bgCard,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: VeloceTheme.borderColor),
+                    ),
+                    child: const Icon(Icons.close, color: VeloceTheme.textSecondary, size: 18),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 32),
+
+              // ─── Large avatar ────────────────────────────────────────────
+              Center(
+                child: Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: VeloceTheme.bgCard,
+                    border: Border.all(
+                      color: VeloceTheme.accentBlueBright.withOpacity(0.5),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: VeloceTheme.accentBlueBright.withOpacity(0.15),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: VeloceTheme.accentBlueBright,
+                        fontSize: 38,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // ─── Email ────────────────────────────────────────────────────
+              Center(
+                child: Text(
+                  email,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: VeloceTheme.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              const Spacer(),
+
+              // ─── Logout button ────────────────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                child: VeloceButton(
+                  label: 'Logout',
+                  icon: Icons.logout,
+                  color: VeloceTheme.accentRed,
+                  onPressed: () => _logout(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
