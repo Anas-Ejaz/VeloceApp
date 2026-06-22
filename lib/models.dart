@@ -1,3 +1,5 @@
+import 'dart:convert'; // 👈 Ye top par import kar lein features list ko text me convert karne ke liye
+
 // ─── Vehicle Model ───────────────────────────────────────────────────────────
 class Vehicle {
   final String id;
@@ -35,7 +37,6 @@ class Vehicle {
   });
 
   /// Construct a [Vehicle] from a Firestore document snapshot.
-  /// Field names must match exactly what the admin panel writes to Firestore.
   factory Vehicle.fromFirestore(Map<String, dynamic> data, String docId) {
     return Vehicle(
       id: docId,
@@ -68,6 +69,50 @@ class Vehicle {
     'description': description,
     'isAvailable': isAvailable,
     'features': features,
+    'rating': rating,
+    'reviewCount': reviewCount,
+    'color': color,
+    'year': year,
+  };
+
+  /// ─── NEW SQFLITE HELPERS (Bina existing structure ko chere) ───
+
+  /// Sqflite se read karne ke liye factory
+  factory Vehicle.fromSqflite(Map<String, dynamic> data) {
+    return Vehicle(
+      id: data['id'] as String? ?? '',
+      name: data['name'] as String? ?? '',
+      brand: data['brand'] as String? ?? '',
+      category: data['category'] as String? ?? 'Sports',
+      horsepower: (data['horsepower'] as num?)?.toDouble() ?? 0,
+      zeroToSixty: (data['zeroToSixty'] as num?)?.toDouble() ?? 0,
+      perDayCharges: (data['perDayCharges'] as num?)?.toDouble() ?? 0,
+      imageUrl: data['imageUrl'] as String? ?? '',
+      description: data['description'] as String? ?? '',
+      isAvailable: (data['isAvailable'] as int? ?? 1) == 1, // SQLite me bool integer (1/0) hota hai
+      features: data['features'] != null
+          ? List<String>.from(jsonDecode(data['features'] as String))
+          : [],
+      rating: (data['rating'] as num?)?.toDouble() ?? 4.8,
+      reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
+      color: data['color'] as String? ?? 'Midnight Black',
+      year: (data['year'] as num?)?.toInt() ?? 2024,
+    );
+  }
+
+  /// Sqflite me write karne ke liye map
+  Map<String, dynamic> toSqfliteMap() => {
+    'id': id,
+    'name': name,
+    'brand': brand,
+    'category': category,
+    'horsepower': horsepower,
+    'zeroToSixty': zeroToSixty,
+    'perDayCharges': perDayCharges,
+    'imageUrl': imageUrl,
+    'description': description,
+    'isAvailable': isAvailable ? 1 : 0, // Boolean ko 1 ya 0 banaya
+    'features': jsonEncode(features),   // List ko String text banaya
     'rating': rating,
     'reviewCount': reviewCount,
     'color': color,
@@ -120,9 +165,6 @@ extension BookingStatusExt on BookingStatus {
 }
 
 // ─── Booking Record ───────────────────────────────────────────────────────────
-/// A booking created when a user books a vehicle and fills in schedule
-/// details. Written to the Firestore `bookings` collection; the admin
-/// dashboard listens to this collection live to show new requests.
 class BookingRecord {
   final String id;
   final String vehicleId;
@@ -192,8 +234,6 @@ class BookingRecord {
 }
 
 // ─── App User (Firestore-backed) ──────────────────────────────────────────────
-/// Represents a real signed-up user, read from Firestore `users/{uid}`.
-/// This replaces the old mock AppUser/SubscriptionTier system entirely.
 class AppUser {
   final String id;
   final String name;
