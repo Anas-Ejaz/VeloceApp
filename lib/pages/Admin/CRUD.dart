@@ -388,7 +388,7 @@ class _OptionTile extends StatelessWidget {
   }
 }
 
-// ─── COMPLETE ADMIN CONTROLS SHEET: Matches Firestore Fields Natively ───────
+
 class _AddVehicleSheet extends StatefulWidget {
   final Vehicle? vehicle;
   const _AddVehicleSheet({this.vehicle});

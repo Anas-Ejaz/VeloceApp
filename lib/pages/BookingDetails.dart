@@ -5,10 +5,7 @@ import '../AppTheme.dart';
 import '../models.dart';
 import '../commonWidgets.dart';
 
-/// Schedule-details form shown after the user taps "Book Now" on a vehicle.
-/// Collects pickup date, time slot, and location, then writes a booking
-/// document to Firestore. Name & email are taken automatically from the
-/// signed-in Firebase user — no need to ask for them again.
+
 class BookingDetailsPage extends StatefulWidget {
   final Vehicle vehicle;
 
@@ -25,7 +22,7 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
   bool _submitting = false;
 
   final List<String> _timeSlots = ['08:00 AM', '10:00 AM', '12:00 PM', '02:00 PM', '04:00 PM', '06:00 PM'];
-  final List<String> _locations = ['Home Delivery', 'Office Delivery', 'Veloce Automotives – Wapda Town', 'Veloce Hub – khyban-e-Ameen'];
+  final List<String> _locations = ['Office Delivery', 'Veloce Automotives – Wapda Town', 'Veloce Hub – khyban-e-Ameen'];
 
   Future<void> _confirmBooking() async {
     final firebaseUser = FirebaseAuth.instance.currentUser;

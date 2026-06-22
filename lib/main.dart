@@ -38,15 +38,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Veloce',
-
-      // Use your custom theme
       theme: ThemeData(
         brightness: Brightness.dark,
         primaryColor: VeloceTheme.accentBlue,
         scaffoldBackgroundColor: VeloceTheme.bgDeep,
       ),
 
-      // Auth Logic: Determines the starting page
+
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
@@ -54,20 +52,19 @@ class MyApp extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
-          // 1. If user is already logged in -> Go to Home
           if (snapshot.hasData) {
             return const HomeScreen();
           }
-          // 2. If first time ever -> Go to Welcome/Get Started
+
           if (!hasSeenWelcome) {
             return const WelcomeScreen();
           }
-          // 3. Otherwise -> Go to Login
+
           return const LoginPage();
         },
       ),
 
-      // Named Routes for simple navigation
+
       routes: {
         "/login": (context) => const LoginPage(),
         "/signup": (context) => const SignUpPage(),

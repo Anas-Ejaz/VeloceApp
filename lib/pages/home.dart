@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../AppTheme.dart';
 import '../models.dart';
 import '../commonWidgets.dart';
+import '../database_helper.dart';
 import 'VehicleBrowser.dart';
 import 'VehicleDetails.dart';
 
@@ -21,13 +22,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _fadeController;
   late Animation<double> _fadeAnim;
 
-  // ─── Featured Fleet — first 6 vehicles from the same Firestore collection
-  // the admin panel manages and the Browse page reads from. Real, bookable
-  // cars; no sample/dummy data.
   final Stream<QuerySnapshot> _featuredStream = FirebaseFirestore.instance
       .collection('vehicles')
       .limit(6)
       .snapshots();
+
+  List<Vehicle> _cachedFeatured = [];
+  bool _cacheLoaded = false;
 
   @override
   void initState() {
@@ -35,6 +36,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _fadeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
     _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
     _fadeController.forward();
+    _loadFeaturedCache();
+  }
+
+  Future<void> _loadFeaturedCache() async {
+    try {
+      final cached = await DatabaseHelper.instance.getCachedVehicles();
+      if (mounted) {
+        setState(() {
+          _cachedFeatured = cached.take(6).toList();
+          _cacheLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _cacheLoaded = true);
+    }
   }
 
   @override
@@ -123,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   _buildWhyVeloce(),
                   const SizedBox(height: 28),
 
-                  // ─── Featured Fleet (live from Firestore) ───────────────
+                  // ─── Featured Fleet (cache-first, then live Firestore) ──
                   GestureDetector(
                     onTap: () => Navigator.push(
                       context,
@@ -156,67 +172,123 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: StreamBuilder<QuerySnapshot>(
         stream: _featuredStream,
         builder: (context, snapshot) {
-          // Loading
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(left: 20, right: 8),
-              itemCount: 3,
-              itemBuilder: (_, __) => Container(
-                width: 200,
-                margin: const EdgeInsets.only(right: 12),
-                decoration: BoxDecoration(
-                  color: VeloceTheme.bgCard,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: VeloceTheme.borderColor),
-                ),
-              ),
-            );
+            if (!_cacheLoaded) {
+              return _buildLoadingRow();
+            }
+            if (_cachedFeatured.isNotEmpty) {
+              return _buildFeaturedList(_cachedFeatured, isOffline: true);
+            }
+            return _buildLoadingRow();
+          }
+
+          // ─── Firestore error (no internet) ──────────────────────────────────
+          if (snapshot.hasError) {
+            if (_cachedFeatured.isNotEmpty) {
+              return _buildFeaturedList(_cachedFeatured, isOffline: true);
+            }
+            return _buildEmptyFleetCard();
           }
 
           final docs = snapshot.data?.docs ?? [];
 
           // Empty fleet — nothing added by admin yet
           if (docs.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: VeloceTheme.bgCard,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: VeloceTheme.borderColor),
-                ),
-                child: Column(
-                  children: const [
-                    Icon(Icons.garage_outlined, color: VeloceTheme.textMuted, size: 32),
-                    SizedBox(height: 10),
-                    Text('Fleet coming soon', style: TextStyle(color: VeloceTheme.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-            );
+            return _buildEmptyFleetCard();
           }
 
           final vehicles = docs
               .map((d) => Vehicle.fromFirestore(d.data() as Map<String, dynamic>, d.id))
               .toList();
 
-          return ListView.builder(
+          // Sync the cache in the background for next time / offline use.
+          DatabaseHelper.instance.replaceAll(vehicles);
+          _cachedFeatured = vehicles.take(6).toList();
+
+          return _buildFeaturedList(vehicles, isOffline: false);
+        },
+      ),
+    );
+  }
+
+  Widget _buildLoadingRow() {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.only(left: 20, right: 8),
+      itemCount: 3,
+      itemBuilder: (_, __) => Container(
+        width: 200,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: VeloceTheme.bgCard,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: VeloceTheme.borderColor),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyFleetCard() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: VeloceTheme.bgCard,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: VeloceTheme.borderColor),
+        ),
+        child: Column(
+          children: const [
+            Icon(Icons.garage_outlined, color: VeloceTheme.textMuted, size: 32),
+            SizedBox(height: 10),
+            Text('Fleet coming soon', style: TextStyle(color: VeloceTheme.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedList(List<Vehicle> vehicles, {required bool isOffline}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+
+        if (isOffline)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Row(
+              children: const [
+                Icon(Icons.cloud_off_rounded, color: VeloceTheme.accentGold, size: 13),
+                SizedBox(width: 6),
+                Text(
+                  'Showing saved fleet — offline',
+                  style: TextStyle(color: VeloceTheme.accentGold, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.only(left: 20, right: 8),
             itemCount: vehicles.length,
             itemBuilder: (ctx, i) => GestureDetector(
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => VehicleDetailScreen(car: vehicles[i])),
+                MaterialPageRoute(
+                  builder: (_) => VehicleDetailScreen(
+                    car: vehicles[i],
+                    isOffline: isOffline,
+                  ),
+                ),
               ),
               child: VehicleCard(vehicle: vehicles[i]),
             ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -618,3 +690,4 @@ class _AccountDrawer extends StatelessWidget {
     );
   }
 }
+

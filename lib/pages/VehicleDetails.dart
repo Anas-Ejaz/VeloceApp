@@ -5,11 +5,24 @@ import 'BookingDetails.dart';
 
 class VehicleDetailScreen extends StatelessWidget {
   final Vehicle car;
+  // True when this screen was opened from a cached (offline) vehicle list.
+  // Booking requires a live availability check against Firestore, so the
+  // Book button is disabled in this case even if car.isAvailable is true
+  // in the stale cached data.
+  final bool isOffline;
 
-  const VehicleDetailScreen({super.key, required this.car});
+  const VehicleDetailScreen({
+    super.key,
+    required this.car,
+    this.isOffline = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Can only actually be booked if the cached availability flag says yes
+    // AND we have a live connection to verify it.
+    final bool canBook = car.isAvailable && !isOffline;
+
     return Scaffold(
       backgroundColor: VeloceTheme.bgDeep,
       extendBodyBehindAppBar: true,
@@ -111,29 +124,59 @@ class VehicleDetailScreen extends StatelessWidget {
 
                   const SizedBox(height: 30),
 
-                  // ─── Book button — disabled when unavailable ───────────────
+                  // ─── Offline notice ──────────────────────────────────────────
+                  // Shown above the button whenever this vehicle is being
+                  // viewed from cached/offline data, regardless of its
+                  // cached availability flag.
+                  if (isOffline) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: VeloceTheme.accentGold.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: VeloceTheme.accentGold.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.cloud_off_rounded, color: VeloceTheme.accentGold, size: 16),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'You\'re offline. Connect to the internet to book this vehicle.',
+                              style: TextStyle(color: VeloceTheme.accentGold, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // ─── Book button — disabled when unavailable OR offline ─────
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: car.isAvailable ? VeloceTheme.accentBlue : VeloceTheme.bgElevated,
+                        backgroundColor: canBook ? VeloceTheme.accentBlue : VeloceTheme.bgElevated,
                         disabledBackgroundColor: VeloceTheme.bgElevated,
                       ),
-                      onPressed: car.isAvailable
+                      onPressed: canBook
                           ? () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => BookingDetailsPage(vehicle: car)),
                       )
                           : null,
                       child: Text(
-                        car.isAvailable ? "Book Now" : "Currently Unavailable",
-                        style: TextStyle(color: car.isAvailable ? Colors.white : VeloceTheme.textMuted),
+                        isOffline
+                            ? "Offline — Can't Book"
+                            : (car.isAvailable ? "Book Now" : "Currently Unavailable"),
+                        style: TextStyle(color: canBook ? Colors.white : VeloceTheme.textMuted),
                       ),
                     ),
                   ),
 
-                  if (!car.isAvailable) ...[
+                  if (!isOffline && !car.isAvailable) ...[
                     const SizedBox(height: 10),
                     const Text(
                       'This vehicle is currently booked by another user. Check back later or browse other vehicles.',
@@ -201,78 +244,3 @@ class _FeatureChip extends StatelessWidget {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import 'package:flutter/material.dart';
-// import 'package:veloce/models.dart';
-// import '../AppTheme.dart';
-//
-// class VehicleDetailScreen extends StatelessWidget {
-//   final Vehicle car;
-//
-//   const VehicleDetailScreen({super.key, required this.car});
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       backgroundColor: VeloceTheme.bgDeep,
-//       extendBodyBehindAppBar: true,
-//       appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
-//       body: SingleChildScrollView(
-//         child: Column(
-//           children: [
-//             // Use dot notation here
-//             Image.network(car.imageUrl, height: 350, width: double.infinity, fit: BoxFit.cover),
-//             Padding(
-//               padding: const EdgeInsets.all(24),
-//               child: Column(
-//                 crossAxisAlignment: CrossAxisAlignment.start,
-//                 children: [
-//                   // And here
-//                   Text(car.category.toUpperCase(), style: const TextStyle(color: VeloceTheme.accentBlueBright, fontWeight: FontWeight.bold)),
-//                   Text(car.name, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-//                   const SizedBox(height: 10),
-//                   // And here
-//                   Text('${car.perDayCharges} PKR/Day', style: const TextStyle(color: Colors.white, fontSize: 24)),
-//                   const SizedBox(height: 20),
-//                   const Text("Description", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-//                   const Text("Experience elite performance with this vehicle.", style: TextStyle(color: VeloceTheme.textMuted)),
-//                   const SizedBox(height: 30),
-//                   SizedBox(
-//                     width: double.infinity,
-//                     height: 50,
-//                     child: ElevatedButton(
-//                       style: ElevatedButton.styleFrom(backgroundColor: VeloceTheme.accentBlue),
-//                       onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Booking..."))),
-//                       child: const Text("Book Now"),
-//                     ),
-//                   ),
-//                 ],
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }

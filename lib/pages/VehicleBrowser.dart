@@ -4,6 +4,7 @@ import 'package:shimmer/shimmer.dart';
 import '../AppTheme.dart';
 import '../models.dart';
 import '../commonWidgets.dart';
+import '../database_helper.dart';
 import 'VehicleDetails.dart';
 
 class VehiclesScreen extends StatefulWidget {
@@ -23,6 +24,34 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
       .collection('vehicles')
       .orderBy('brand')
       .snapshots();
+
+  // ─── Local SQLite cache state ────────────────────────────────────────────
+  // Loaded once on init so the grid has something to show immediately, even
+  // before the first Firestore snapshot arrives (or with no internet at
+  // all). Every time a fresh Firestore snapshot comes in, this is updated
+  // and the cache is overwritten so it stays in sync.
+  List<Vehicle> _cachedVehicles = [];
+  bool _cacheLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCache();
+  }
+
+  Future<void> _loadCache() async {
+    try {
+      final cached = await DatabaseHelper.instance.getCachedVehicles();
+      if (mounted) {
+        setState(() {
+          _cachedVehicles = cached;
+          _cacheLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _cacheLoaded = true);
+    }
+  }
 
   @override
   void dispose() {
@@ -98,86 +127,54 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
             ),
           ),
 
-          // ─── Vehicle Grid (Firestore stream) ───────────────────────────────
+          // ─── Vehicle Grid (cache-first, then live Firestore) ────────────────
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _vehicleStream,
               builder: (context, snapshot) {
-                // Loading state — shimmer skeleton
+                // ─── Still waiting on the FIRST Firestore snapshot ───────────
+                // If we already have a local cache, show it instead of a
+                // shimmer skeleton — this is the "instant load" behavior.
                 if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (!_cacheLoaded) {
+                    return _ShimmerGrid();
+                  }
+                  if (_cachedVehicles.isNotEmpty) {
+                    return _buildVehicleList(_cachedVehicles, isOffline: true);
+                  }
                   return _ShimmerGrid();
                 }
 
-                // Error state
+                // ─── Firestore error (e.g. no internet) ───────────────────────
+                // Fall back to whatever is cached rather than showing a hard
+                // error, since the point of the cache is to keep the app
+                // usable offline.
                 if (snapshot.hasError) {
+                  if (_cachedVehicles.isNotEmpty) {
+                    return _buildVehicleList(_cachedVehicles, isOffline: true);
+                  }
                   return _ErrorView(message: snapshot.error.toString());
                 }
 
-                // Map Firestore docs → Vehicle objects
+                // ─── Fresh data from Firestore ────────────────────────────────
                 final docs = snapshot.data?.docs ?? [];
-                final allVehicles = docs.map((doc) {
+                final freshVehicles = docs.map((doc) {
                   return Vehicle.fromFirestore(
                     doc.data() as Map<String, dynamic>,
                     doc.id,
                   );
                 }).toList();
 
-                // Apply search filter
-                final vehicles = _applySearch(allVehicles);
+                // Sync the cache in the background — doesn't block the UI.
+                DatabaseHelper.instance.replaceAll(freshVehicles);
+                _cachedVehicles = freshVehicles;
 
                 // Empty fleet
-                if (allVehicles.isEmpty) {
+                if (freshVehicles.isEmpty) {
                   return const _EmptyFleet();
                 }
 
-                // No search results
-                if (vehicles.isEmpty) {
-                  return _NoResults(query: _query);
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Result count
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        '${vehicles.length} vehicle${vehicles.length == 1 ? '' : 's'}'
-                            '${_query.isNotEmpty ? ' for "$_query"' : ''}',
-                        style: const TextStyle(
-                          color: VeloceTheme.textMuted,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Grid
-                    Expanded(
-                      child: GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.72,
-                        ),
-                        itemCount: vehicles.length,
-                        itemBuilder: (ctx, i) => _VehicleGridCard(
-                          vehicle: vehicles[i],
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  VehicleDetailScreen(car: vehicles[i]),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
+                return _buildVehicleList(freshVehicles, isOffline: false);
               },
             ),
           ),
@@ -185,14 +182,105 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
       ),
     );
   }
+
+  // ─── Shared grid builder used by both the live and cached paths ───────────
+  // Layout below is unchanged from the original — same search-count text,
+  // same SliverGrid settings, same card. Only addition is the optional
+  // offline banner when serving cached data.
+  Widget _buildVehicleList(List<Vehicle> source, {required bool isOffline}) {
+    final vehicles = _applySearch(source);
+
+    if (vehicles.isEmpty) {
+      return _NoResults(query: _query);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Offline banner — only shown when serving the local cache because
+        // Firestore hasn't responded yet (no internet / still connecting).
+        if (isOffline)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: VeloceTheme.accentGold.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: VeloceTheme.accentGold.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: const [
+                Icon(Icons.cloud_off_rounded, color: VeloceTheme.accentGold, size: 15),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Showing saved fleet — connect to the internet to book.',
+                    style: TextStyle(color: VeloceTheme.accentGold, fontSize: 11.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Result count
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '${vehicles.length} vehicle${vehicles.length == 1 ? '' : 's'}'
+                '${_query.isNotEmpty ? ' for "$_query"' : ''}',
+            style: const TextStyle(
+              color: VeloceTheme.textMuted,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Grid
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              // Slightly taller cards than the original (0.72 -> 0.62) so
+              // the text block (brand, name, specs, price row) always fits
+              // without the RenderFlex overflowing.
+              childAspectRatio: 0.62,
+            ),
+            itemCount: vehicles.length,
+            itemBuilder: (ctx, i) => _VehicleGridCard(
+              vehicle: vehicles[i],
+              isOffline: isOffline,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => VehicleDetailScreen(
+                    car: vehicles[i],
+                    isOffline: isOffline,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 // ─── Vehicle Grid Card ────────────────────────────────────────────────────────
 class _VehicleGridCard extends StatelessWidget {
   final Vehicle vehicle;
+  final bool isOffline;
   final VoidCallback onTap;
 
-  const _VehicleGridCard({required this.vehicle, required this.onTap});
+  const _VehicleGridCard({
+    required this.vehicle,
+    required this.onTap,
+    this.isOffline = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -204,7 +292,11 @@ class _VehicleGridCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: VeloceTheme.borderColor),
         ),
+        // Card itself sizes to whatever the grid gives it — no fixed
+        // height here, so the Column below must not exceed that via
+        // mainAxisSize.min layout + tight padding/spacing.
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ─── Image ───────────────────────────────────────────────────────
@@ -213,19 +305,21 @@ class _VehicleGridCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(18)),
-                  child: vehicle.imageUrl.isNotEmpty
-                      ? Image.network(
-                    vehicle.imageUrl,
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (_, child, progress) =>
-                    progress == null
-                        ? child
+                  child: AspectRatio(
+                    aspectRatio: 16 / 10,
+                    child: vehicle.imageUrl.isNotEmpty
+                        ? Image.network(
+                      vehicle.imageUrl,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (_, child, progress) =>
+                      progress == null
+                          ? child
+                          : _ImagePlaceholder(),
+                      errorBuilder: (_, __, ___) => _ImagePlaceholder(),
+                    )
                         : _ImagePlaceholder(),
-                    errorBuilder: (_, __, ___) => _ImagePlaceholder(),
-                  )
-                      : _ImagePlaceholder(),
+                  ),
                 ),
                 // Category badge
                 Positioned(
@@ -275,79 +369,100 @@ class _VehicleGridCard extends StatelessWidget {
 
             // ─── Info ─────────────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     vehicle.brand,
                     style: const TextStyle(
-                        color: VeloceTheme.textMuted, fontSize: 11),
+                        color: VeloceTheme.textMuted, fontSize: 10),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     vehicle.name,
                     style: const TextStyle(
                       color: VeloceTheme.textPrimary,
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   Row(
                     children: [
                       const Icon(Icons.bolt,
-                          color: VeloceTheme.accentGold, size: 13),
-                      Text(
-                        ' ${vehicle.horsepower.toInt()} HP',
-                        style: const TextStyle(
-                            color: VeloceTheme.textSecondary, fontSize: 11),
+                          color: VeloceTheme.accentGold, size: 12),
+                      const SizedBox(width: 2),
+                      Flexible(
+                        child: Text(
+                          '${vehicle.horsepower.toInt()} HP',
+                          style: const TextStyle(
+                              color: VeloceTheme.textSecondary, fontSize: 10),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       const Icon(Icons.timer_outlined,
-                          color: VeloceTheme.textMuted, size: 12),
-                      Text(
-                        ' ${vehicle.zeroToSixty}s',
-                        style: const TextStyle(
-                            color: VeloceTheme.textSecondary, fontSize: 11),
+                          color: VeloceTheme.textMuted, size: 11),
+                      const SizedBox(width: 2),
+                      Flexible(
+                        child: Text(
+                          '${vehicle.zeroToSixty}s',
+                          style: const TextStyle(
+                              color: VeloceTheme.textSecondary, fontSize: 10),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('from',
-                              style: TextStyle(
-                                  color: VeloceTheme.textMuted, fontSize: 10)),
-                          Text(
-                            '${vehicle.perDayCharges.toInt()} PKR/day',
-                            style: const TextStyle(
-                              color: VeloceTheme.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('from',
+                                style: TextStyle(
+                                    color: VeloceTheme.textMuted, fontSize: 9)),
+                            Text(
+                              '${vehicle.perDayCharges.toInt()} PKR/day',
+                              style: const TextStyle(
+                                color: VeloceTheme.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                            horizontal: 9, vertical: 5),
                         decoration: BoxDecoration(
-                          color: VeloceTheme.accentBlue,
+                          // Greyed out when offline since it can't actually
+                          // be booked from a cached snapshot.
+                          color: isOffline ? VeloceTheme.bgElevated : VeloceTheme.accentBlue,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
-                          'Book',
+                        child: Text(
+                          isOffline ? 'Offline' : 'Book',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
+                            color: isOffline ? VeloceTheme.textMuted : Colors.white,
+                            fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -369,7 +484,6 @@ class _ImagePlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 120,
       width: double.infinity,
       color: VeloceTheme.bgElevated,
       child: const Icon(
@@ -394,7 +508,7 @@ class _ShimmerGrid extends StatelessWidget {
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: 0.72,
+          childAspectRatio: 0.62,
         ),
         itemCount: 6,
         itemBuilder: (_, __) => Container(
@@ -519,22 +633,6 @@ class _ErrorView extends StatelessWidget {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

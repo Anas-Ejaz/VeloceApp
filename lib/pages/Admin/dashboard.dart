@@ -45,17 +45,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
     super.dispose();
   }
 
+  // ─── Notification popup — Booking Requests ─────────────────────────────────
+  void _showNotificationsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: VeloceTheme.bgCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => _NotificationsSheet(
+        onConfirm: (id) => updateBookingStatus(sheetContext, id, 'confirmed'),
+        onCancel: (id) => updateBookingStatus(sheetContext, id, 'cancelled'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: VeloceTheme.bgDeep,
+      endDrawer: const _AdminAccountDrawer(),
       appBar: AppBar(
         backgroundColor: VeloceTheme.bgDeep,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 20),
-            child:
-              _VeloceLogo(),
-
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 20),
+          child: _VeloceLogo(),
         ),
         leadingWidth: 80,
         title: const Column(
@@ -66,7 +80,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
           ],
         ),
         actions: [
-          // ─── Live notification bell — badge count = pending bookings ───────
+          // ─── Live notification bell — opens Booking Requests popup ─────────
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance.collection('bookings').where('status', isEqualTo: 'pending').snapshots(),
             builder: (context, snapshot) {
@@ -75,7 +89,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                 children: [
                   IconButton(
                     icon: const Icon(Icons.notifications_outlined, color: VeloceTheme.textPrimary),
-                    onPressed: () => setState(() => _selectedNavIndex = 0),
+                    onPressed: () => _showNotificationsSheet(context),
                   ),
                   if (pendingCount > 0)
                     Positioned(
@@ -97,12 +111,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
               );
             },
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 20),
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor: VeloceTheme.accentBlue.withOpacity(0.2),
-              child: const Text('A', style: TextStyle(color: VeloceTheme.accentBlueBright, fontWeight: FontWeight.w700)),
+          // ─── Tappable admin avatar — opens the account sidebar ──────────────
+          GestureDetector(
+            onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 20),
+              child: CircleAvatar(
+                radius: 17,
+                backgroundColor: VeloceTheme.accentBlue.withOpacity(0.2),
+                child: const Text('A', style: TextStyle(color: VeloceTheme.accentBlueBright, fontWeight: FontWeight.w700)),
+              ),
             ),
           ),
         ],
@@ -126,6 +144,113 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─── Shared booking status updater ───────────────────────────────────────────
+Future<void> updateBookingStatus(BuildContext context, String bookingId, String newStatus) async {
+  await FirebaseFirestore.instance.collection('bookings').doc(bookingId).update({'status': newStatus});
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Booking marked as $newStatus.'),
+      backgroundColor: VeloceTheme.successGreen,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+}
+
+// ─── Notifications Bottom Sheet ──────────────────────────────────────────────
+class _NotificationsSheet extends StatelessWidget {
+  final void Function(String bookingId) onConfirm;
+  final void Function(String bookingId) onCancel;
+
+  const _NotificationsSheet({required this.onConfirm, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: VeloceTheme.textMuted, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Booking Requests', style: TextStyle(color: VeloceTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(color: VeloceTheme.bgElevated, borderRadius: BorderRadius.circular(8)),
+                      child: const Icon(Icons.close, color: VeloceTheme.textMuted, size: 18),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('bookings')
+                    .orderBy('createdAt', descending: true)
+                    .limit(30)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: VeloceTheme.accentBlueBright));
+                  }
+
+                  final docs = snapshot.data?.docs ?? [];
+                  if (docs.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.inbox_outlined, color: VeloceTheme.textMuted, size: 44),
+                            SizedBox(height: 12),
+                            Text('No bookings yet', style: TextStyle(color: VeloceTheme.textSecondary, fontSize: 15)),
+                            SizedBox(height: 4),
+                            Text('New booking requests will show up here.', style: TextStyle(color: VeloceTheme.textMuted, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  final bookings = docs.map((d) => BookingRecord.fromFirestore(d.data() as Map<String, dynamic>, d.id)).toList();
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    itemCount: bookings.length,
+                    itemBuilder: (ctx, i) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _BookingRequestTile(
+                        booking: bookings[i],
+                        onConfirm: () => onConfirm(bookings[i].id),
+                        onCancel: () => onCancel(bookings[i].id),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -159,19 +284,6 @@ class _DashboardContent extends StatelessWidget {
         ),
       );
     });
-  }
-
-  // ─── Mark a booking as confirmed (and free up / keep vehicle state) ────────
-  Future<void> _updateBookingStatus(BuildContext context, String bookingId, String newStatus) async {
-    await FirebaseFirestore.instance.collection('bookings').doc(bookingId).update({'status': newStatus});
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Booking marked as $newStatus.'),
-        backgroundColor: VeloceTheme.successGreen,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
-    }
   }
 
   @override
@@ -254,54 +366,6 @@ class _DashboardContent extends StatelessWidget {
                         ],
                       );
                     },
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // ─── Booking Requests (live notification feed) ──────────────────
-              const SectionHeader(title: 'Booking Requests'),
-              const SizedBox(height: 14),
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('bookings')
-                    .orderBy('createdAt', descending: true)
-                    .limit(10)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Center(child: CircularProgressIndicator(color: VeloceTheme.accentBlueBright)),
-                    );
-                  }
-
-                  final docs = snapshot.data?.docs ?? [];
-                  if (docs.isEmpty) {
-                    return GlassCard(
-                      child: Column(
-                        children: const [
-                          Icon(Icons.inbox_outlined, color: VeloceTheme.textMuted, size: 36),
-                          SizedBox(height: 10),
-                          Text('No bookings yet', style: TextStyle(color: VeloceTheme.textSecondary, fontSize: 14)),
-                          SizedBox(height: 4),
-                          Text('New booking requests will show up here.', style: TextStyle(color: VeloceTheme.textMuted, fontSize: 12)),
-                        ],
-                      ),
-                    );
-                  }
-
-                  final bookings = docs.map((d) => BookingRecord.fromFirestore(d.data() as Map<String, dynamic>, d.id)).toList();
-
-                  return Column(
-                    children: bookings.map((b) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _BookingRequestTile(
-                        booking: b,
-                        onConfirm: () => _updateBookingStatus(context, b.id, 'confirmed'),
-                        onCancel: () => _updateBookingStatus(context, b.id, 'cancelled'),
-                      ),
-                    )).toList(),
                   );
                 },
               ),
@@ -718,11 +782,8 @@ class _QuickAction extends StatelessWidget {
   }
 }
 
-
-
-
 class _VeloceLogo extends StatelessWidget {
-  const _VeloceLogo({super.key});
+  const _VeloceLogo();
 
   @override
   Widget build(BuildContext context) {
@@ -737,13 +798,12 @@ class _VeloceLogo extends StatelessWidget {
   }
 }
 
-// ─── Account Drawer ───────────────────────────────────────────────────────────
-/// Slides in from the right when the avatar in the top app bar is tapped.
-/// Shows a larger version of the same initial-letter avatar, the signed-in
-/// user's email, and a Logout button that signs out of Firebase and sends
-/// the user back to the login screen.
-class _AccountDrawer extends StatelessWidget {
-  const _AccountDrawer();
+// ─── Admin Account Drawer ─────────────────────────────────────────────────────
+/// Mirrors the user-side account drawer on the Home page: enlarged avatar,
+/// the signed-in admin's email, and a Logout button that signs out of
+/// Firebase and returns to the login screen.
+class _AdminAccountDrawer extends StatelessWidget {
+  const _AdminAccountDrawer();
 
   Future<void> _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
@@ -755,8 +815,8 @@ class _AccountDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final User? user = FirebaseAuth.instance.currentUser;
-    final String email = user?.email ?? 'Guest';
-    final String initial = email.isNotEmpty ? email[0].toUpperCase() : 'G';
+    final String email = user?.email ?? 'admin@veloce.com';
+    final String initial = email.isNotEmpty ? email[0].toUpperCase() : 'A';
 
     return Drawer(
       backgroundColor: VeloceTheme.bgDeep,
@@ -791,7 +851,7 @@ class _AccountDrawer extends StatelessWidget {
                   height: 96,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: VeloceTheme.bgCard,
+                    color: VeloceTheme.accentBlue.withOpacity(0.15),
                     border: Border.all(
                       color: VeloceTheme.accentBlueBright.withOpacity(0.5),
                       width: 2,
@@ -816,7 +876,23 @@ class _AccountDrawer extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
+
+              // ─── ADMIN badge ──────────────────────────────────────────────
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: VeloceTheme.accentGold.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'ADMIN',
+                    style: TextStyle(color: VeloceTheme.accentGold, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
 
               // ─── Email ────────────────────────────────────────────────────
               Center(
